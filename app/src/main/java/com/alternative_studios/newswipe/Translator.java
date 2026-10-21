@@ -22,11 +22,12 @@ public final class Translator {
 
     /** 번역 결과. detected는 원문 언어 코드(자동 감지). */
     public static final class Result {
-        public final String text, detected;
+        public final String text, detected, target;
 
-        Result(String text, String detected) {
+        Result(String text, String detected, String target) {
             this.text = text;
             this.detected = detected;
+            this.target = target;
         }
     }
 
@@ -78,7 +79,7 @@ public final class Translator {
             if (code >= 400) throw new TranslateException(errorMessage(code, resp));
             JSONObject first = new JSONObject(resp).getJSONObject("data").getJSONArray("translations").getJSONObject(0);
             String out = unescapeHtml(first.getString("translatedText"));
-            return new Result(out, first.optString("detectedSourceLanguage", null));
+            return new Result(out, first.optString("detectedSourceLanguage", null), target);
         } catch (TranslateException e) {
             throw e;
         } catch (java.io.IOException e) {

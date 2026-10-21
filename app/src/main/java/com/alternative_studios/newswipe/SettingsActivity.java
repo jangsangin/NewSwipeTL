@@ -2362,7 +2362,8 @@ public final class SettingsActivity extends Activity {
 
         LinearLayout translate = section("번역");
         translate.addView(note("Google Cloud Translation API로 입력란의 글을 번역합니다. 도구 막대 버튼 사용자화에서 '번역 버튼'을 켜면 "
-                + "도구 막대에 나타납니다. 번역 버튼을 누른 순간의 글만 Google로 전송되며, 그 밖의 입력은 전송하지 않습니다."));
+                + "도구 막대에 나타납니다. 버튼을 누르면 번역 모드가 켜져 쓰다 멈출 때 번역이 미리 보이고(미리보기를 누르면 글이 바뀝니다), "
+                + "길게 누르면 한 번만 번역합니다. 번역 모드를 켜 둔 동안과 길게 누른 순간의 입력란 글만 Google로 전송되며, 입력란을 떠나면 번역 모드가 꺼집니다."));
         String savedKey = prefs.translateApiKey();
         String keyState = savedKey == null || savedKey.isEmpty() ? "입력 안 됨"
                 : "입력됨 (…" + savedKey.substring(Math.max(0, savedKey.length() - 4)) + ")";
@@ -2372,7 +2373,7 @@ public final class SettingsActivity extends Activity {
         translate.addView(button("이미 그 언어일 때 번역할 언어 · " + Translator.languageName(prefs.translateAlt()),
                 v -> askTranslateLanguage("이미 그 언어일 때 번역할 언어", Prefs.TRANSLATE_ALT, prefs.translateAlt())));
         translate.addView(note("글이 '번역할 언어'로 쓰여 있으면(자동 감지) 두 번째 언어로 번역합니다. 이때는 같은 글을 두 번 보내 "
-                + "글자 수가 두 배로 셉니다. Google Cloud Translation은 월 50만 자까지 무료이며 결제 계정 등록이 필요합니다. "
+                + "글자 수가 두 배로 셉니다. 번역 모드는 쓰다 0.8초 멈출 때마다 전체 글을 보내므로 길게 쓸수록 글자 수를 더 씁니다. Google Cloud Translation은 월 50만 자까지 무료이며 결제 계정 등록이 필요합니다. "
                 + "한 번에 " + Translator.MAX_CHARS + "자까지 번역하며, Cloud 콘솔에서 일일 할당량을 걸어 두면 안전합니다. "
                 + "API 키는 이 기기의 앱 저장소에만 저장되고 설정 내보내기에는 담기지 않습니다."));
 

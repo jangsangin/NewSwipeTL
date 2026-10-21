@@ -568,6 +568,9 @@ public final class NewSwipeIME extends InputMethodService implements KeyboardVie
         topSlot.addView(searchBar);
         forgetBar = null;   // 도구 막대의 확인 줄은 필요할 때 만든다 (새 화면에는 아직 없다)
         column.addView(topSlot, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, toolbarHeight));
+        translateBar = buildTranslateBar();
+        column.addView(translateBar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, toolbarHeight));
+        setLiveTranslate(false);   // 새 화면에서는 번역 모드를 끈 채로 시작한다
 
         resultViews.clear();   // 예전 색으로 만든 칸은 버린다
         resultNote = null;
@@ -743,7 +746,11 @@ public final class NewSwipeIME extends InputMethodService implements KeyboardVie
         bar.addView(voiceButton);
         undoButton = toolButton(Icons.UNDO, "실행 취소", v -> undo());
         bar.addView(undoButton);
-        translateButton = toolButton(Icons.TRANSLATE, "번역", v -> translateField());
+        translateButton = toolButton(Icons.TRANSLATE, "번역", v -> toggleLiveTranslate());
+        translateButton.setOnLongClickListener(v -> {   // 길게 누르면 한 번만 번역해 바로 바꾼다
+            translateField();
+            return true;
+        });
         bar.addView(translateButton);
         toolSpacer = new View(this);
         bar.addView(toolSpacer, new LinearLayout.LayoutParams(0, 1, 1f));
@@ -1351,6 +1358,7 @@ public final class NewSwipeIME extends InputMethodService implements KeyboardVie
     public void onFinishInput() {
         finishComposingOnLeave();
         super.onFinishInput();
+        setLiveTranslate(false);   // 다른 입력란으로 가면 번역 모드를 끈다 (다른 칸의 글이 전송되지 않게)
         composer.reset();
         hadComposing = false;
         mirror.forget();
@@ -1431,6 +1439,7 @@ public final class NewSwipeIME extends InputMethodService implements KeyboardVie
         }
         if (composer.isEmpty()) updateAutoCap();
         scheduleSuggest();
+        scheduleLivePreview();
     }
 
     /**
@@ -3706,6 +3715,178 @@ public final class NewSwipeIME extends InputMethodService implements KeyboardVie
     }
 
     // ---------------------------------------------------------------- 번역 (Google Cloud Translation)
+
+    // 번역 모드: 글을 쓰다 잠깐 멈추면 키보드 위 줄에 번역이 미리 보이고, 그 줄을 누르면 입력란의 글이 번역문으로 바뀐다.
+    private LinearLayout translateBar;
+    private android.widget.TextView translateLang, translatePreview;
+    private boolean liveTranslate;
+    private String liveSource, livePreview, liveApplied;   // 번역한 원문, 번역문, 방금 바꿔 넣은 번역문
+    private int liveSeq;
+    private final Runnable liveRun = this::runLivePreview;
+    private static final int LIVE_DELAY_MS = 800;   // 멈춘 뒤 이만큼 지나야 보낸다 (무료 글자 수를 아끼려고)
+
+    private LinearLayout buildTranslateBar() {
+        LinearLayout b = new LinearLayout(this);
+        b.setOrientation(LinearLayout.HORIZONTAL);
+        b.setGravity(Gravity.CENTER_VERTICAL);
+        b.setBackgroundColor(theme.key);
+        int pad = Ui.dp(this, 12);
+        b.setPadding(pad, 0, pad, 0);
+        translateLang = new android.widget.TextView(this);
+        translateLang.setTextColor(theme.accent);
+        translateLang.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 12);
+        translateLang.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        translateLang.setPadding(0, 0, Ui.dp(this, 10), 0);
+        translatePreview = new android.widget.TextView(this);
+        translatePreview.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 15);
+        translatePreview.setSingleLine(true);
+        translatePreview.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        android.widget.TextView apply = new android.widget.TextView(this);
+        apply.setText("적용");
+        apply.setTextColor(theme.accent);
+        apply.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13);
+        apply.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        apply.setPadding(Ui.dp(this, 10), 0, 0, 0);
+        b.addView(translateLang);
+        b.addView(translatePreview, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        b.addView(apply);
+        b.setOnClickListener(v -> {
+            feedback.onToolbar();
+            applyLiveTranslation();
+        });
+        b.setVisibility(View.GONE);
+        return b;
+    }
+
+    private void showLivePreview(String lang, String text, boolean dim) {
+        if (translateLang == null || translatePreview == null) return;
+        translateLang.setText(lang);
+        translatePreview.setText(text);
+        translatePreview.setTextColor(dim ? theme.hint : theme.text);
+    }
+
+    private static String shortLang(String code) {
+        if (code == null || code.isEmpty()) return "?";
+        int i = code.indexOf('-');
+        return (i < 0 ? code : code.substring(0, i)).toUpperCase(java.util.Locale.ROOT);
+    }
+
+    private void setLiveTranslate(boolean on) {
+        liveTranslate = on;
+        liveSource = livePreview = liveApplied = null;
+        liveSeq++;
+        main.removeCallbacks(liveRun);
+        if (translateBar != null) translateBar.setVisibility(on ? View.VISIBLE : View.GONE);
+        if (translateButton != null) translateButton.setColor(on ? theme.accent : theme.text);
+        if (on) showLivePreview("번역", "글을 쓰면 번역이 여기에 보입니다", true);
+    }
+
+    /** 번역 버튼: 번역 모드를 켜고 끈다. */
+    private void toggleLiveTranslate() {
+        if (liveTranslate) {
+            setLiveTranslate(false);
+            return;
+        }
+        if (passwordField) {
+            Toast.makeText(this, "비밀번호 입력란에서는 번역할 수 없습니다", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String key = prefs.translateApiKey();
+        if (key == null || key.trim().isEmpty()) {
+            askOnBar("번역하려면 API 키가 필요합니다. 설정을 열까요?", this::openSettings);
+            return;
+        }
+        setLiveTranslate(true);
+        Toast.makeText(this, "번역 모드: 쓰다 멈추면 번역이 미리 보입니다. 미리보기를 누르면 바뀝니다. "
+                + "켜 둔 동안 입력란의 글이 번역을 위해 전송됩니다.", Toast.LENGTH_LONG).show();
+        main.post(liveRun);
+    }
+
+    private void scheduleLivePreview() {
+        if (!liveTranslate) return;
+        main.removeCallbacks(liveRun);
+        main.postDelayed(liveRun, LIVE_DELAY_MS);
+    }
+
+    private String fieldText(InputConnection ic) {
+        CharSequence b = ic.getTextBeforeCursor(Translator.MAX_CHARS + 1, 0);
+        CharSequence a = ic.getTextAfterCursor(Translator.MAX_CHARS + 1, 0);
+        return (b == null ? "" : b.toString()) + (a == null ? "" : a.toString());
+    }
+
+    private void runLivePreview() {
+        if (!liveTranslate || passwordField) return;
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null) return;
+        final String text = fieldText(ic);
+        if (text.trim().isEmpty()) {
+            liveSource = livePreview = null;
+            liveSeq++;
+            showLivePreview("번역", "글을 쓰면 번역이 여기에 보입니다", true);
+            return;
+        }
+        if (text.equals(liveApplied) || text.equals(liveSource)) return;   // 이미 번역했거나 방금 바꿔 넣은 글
+        if (text.length() > Translator.MAX_CHARS) {
+            showLivePreview("번역", "글이 너무 깁니다 (" + Translator.MAX_CHARS + "자까지)", true);
+            return;
+        }
+        final String key = prefs.translateApiKey(), target = prefs.translateTarget(), alt = prefs.translateAlt();
+        final int seq = ++liveSeq;
+        livePreview = null;
+        showLivePreview("번역", "번역 중…", true);
+        Thread t = new Thread(() -> {
+            Translator.Result result = null;
+            String error = null;
+            try {
+                result = Translator.translate(key, text, null, target);
+                if (result.detected != null && sameLanguage(result.detected, target) && !sameLanguage(target, alt)) {
+                    result = Translator.translate(key, text, result.detected, alt);
+                }
+            } catch (Translator.TranslateException e) {
+                error = e.getMessage();
+            }
+            final Translator.Result r = result;
+            final String err = error;
+            main.post(() -> {
+                if (seq != liveSeq || !liveTranslate) return;   // 그사이 글이 바뀌었거나 모드를 껐다
+                if (err != null || r == null) {
+                    showLivePreview("번역", err == null ? "번역에 실패했습니다" : err, true);
+                    return;
+                }
+                liveSource = text;
+                livePreview = r.text;
+                showLivePreview(shortLang(r.detected) + "→" + shortLang(r.target), r.text, false);
+            });
+        }, "translate-live");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /** 미리보기 줄을 눌렀을 때: 입력란의 글이 번역한 그 글 그대로이면 번역문으로 바꾼다. */
+    private void applyLiveTranslation() {
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null) return;
+        String text = fieldText(ic);
+        if (livePreview == null || !text.equals(liveSource)) {
+            Toast.makeText(this, "번역이 끝나면 다시 눌러 주세요", Toast.LENGTH_SHORT).show();
+            main.removeCallbacks(liveRun);
+            main.post(liveRun);
+            return;
+        }
+        commitComposing();
+        CharSequence b = ic.getTextBeforeCursor(Translator.MAX_CHARS + 1, 0);
+        CharSequence a = ic.getTextAfterCursor(Translator.MAX_CHARS + 1, 0);
+        final String translated = livePreview;
+        ic.beginBatchEdit();
+        ic.deleteSurroundingText(b == null ? 0 : b.length(), a == null ? 0 : a.length());
+        ic.commitText(translated, 1);
+        ic.endBatchEdit();
+        endEdit();
+        liveApplied = translated;   // 바뀐 글을 다시 번역하지 않는다
+        liveSource = livePreview = null;
+        liveSeq++;
+        showLivePreview("번역", "바꿨습니다. 실행 취소 버튼으로 되돌릴 수 있습니다", true);
+    }
 
     private int translateSeq;   // 번역 요청 번호. 새 요청이나 입력란 변경 시 늦게 온 응답을 버린다
 
