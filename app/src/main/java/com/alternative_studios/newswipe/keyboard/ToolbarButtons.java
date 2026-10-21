@@ -10,11 +10,11 @@ import java.util.List;
  */
 public final class ToolbarButtons {
     public static final String CLIPBOARD = "clipboard", EMOJI = "emoji", VOICE = "voice", UNDO = "undo",
-            SETTINGS = "settings", HIDE = "hide", ONE_HAND = "onehand";
+            SETTINGS = "settings", HIDE = "hide", ONE_HAND = "onehand", TRANSLATE = "translate";
     /** 기본 배치. */
-    public static final String[] DEFAULT_LEFT = {CLIPBOARD, EMOJI, VOICE, UNDO};
+    public static final String[] DEFAULT_LEFT = {CLIPBOARD, EMOJI, VOICE, UNDO, TRANSLATE};
     public static final String[] DEFAULT_RIGHT = {ONE_HAND, SETTINGS, HIDE};
-    public static final String[] ALL = {CLIPBOARD, EMOJI, VOICE, UNDO, ONE_HAND, SETTINGS, HIDE};
+    public static final String[] ALL = {CLIPBOARD, EMOJI, VOICE, UNDO, TRANSLATE, ONE_HAND, SETTINGS, HIDE};
 
     private ToolbarButtons() {
     }
@@ -28,6 +28,7 @@ public final class ToolbarButtons {
             case UNDO: return "실행 취소 버튼";
             case SETTINGS: return "설정 버튼";
             case HIDE: return "키보드 숨기기 버튼";
+            case TRANSLATE: return "번역 버튼";
             case ONE_HAND: return "한 손 모드 버튼";
             default: return id;
         }
@@ -37,6 +38,7 @@ public final class ToolbarButtons {
     public static String hint(String id) {
         switch (id) {
             case VOICE: return "기기의 음성 입력(예: Google 음성 입력)을 사용합니다.";
+            case TRANSLATE: return "입력란의 글(선택했다면 선택한 글)을 Google 번역으로 바꿔 줍니다. 설정에서 API 키를 입력해야 하며, 누른 순간의 글만 인터넷으로 전송됩니다.";
             case UNDO: return "입력란에 Ctrl+Z를 보냅니다. 앱이 지원하면 방금 한 입력이나 지우기를 되돌립니다.";
             case HIDE: return "외장 키보드를 연결해 도구 막대만 보일 때는 뒤집혀 '키보드 보이기' 버튼이 됩니다. 누르면 자판 전체가 보입니다.";
             case ONE_HAND: return "누르면 한 손 모드를 켜고 끕니다. 왼쪽·오른쪽으로 밀면 그쪽으로 쏠린 한 손 모드가 됩니다.";
@@ -52,6 +54,7 @@ public final class ToolbarButtons {
             case UNDO: return Icons.UNDO;
             case SETTINGS: return Icons.SETTINGS;
             case ONE_HAND: return Icons.ONE_HAND;
+            case TRANSLATE: return Icons.TRANSLATE;
             default: return Icons.HIDE;
         }
     }

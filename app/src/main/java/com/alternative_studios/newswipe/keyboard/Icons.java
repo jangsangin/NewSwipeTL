@@ -58,6 +58,7 @@ public final class Icons {
     public static final int CUT = 41;             // 잘라내기 (가위)
     public static final int COPY = 42;            // 복사 (겹친 두 장)
     public static final int PASTE = 43;           // 붙여넣기 (아래 화살표가 든 클립보드)
+    public static final int TRANSLATE = 45;       // 번역 (Gboard 번역 아이콘처럼 文과 A)
     public static final int SELECT_ALL = 44;      // 전체 선택 (점선 테두리 안의 네모)
 
     private static final Path path = new Path();
@@ -190,6 +191,26 @@ public final class Icons {
                 oval.set(5.5f, 6.5f, 18.5f, 17.5f);
                 c.drawArc(oval, 0, 180, false, p);
                 c.drawLine(12, 17.5f, 12, 21, p);
+                break;
+            case TRANSLATE:
+                // 왼쪽 위: 文 모양 (가로줄, 세로줄, 두 갈래 획)
+                c.drawLine(3, 6, 12, 6, p);
+                c.drawLine(7.5f, 4, 7.5f, 6, p);
+                path.moveTo(5, 10);
+                path.lineTo(10, 10);
+                path.moveTo(10.5f, 6);
+                path.cubicTo(10, 10, 7.5f, 13, 4, 14.5f);
+                path.moveTo(5.5f, 8.5f);
+                path.cubicTo(7, 11, 9, 13, 11.5f, 14);
+                c.drawPath(path, p);
+                // 오른쪽 아래: A
+                path.reset();
+                path.moveTo(12.5f, 20.5f);
+                path.lineTo(16.5f, 10);
+                path.lineTo(20.5f, 20.5f);
+                path.moveTo(14, 16.5f);
+                path.lineTo(19, 16.5f);
+                c.drawPath(path, p);
                 break;
             case SETTINGS: {
                 // 톱니바퀴: 톱니 8개를 한 붓으로 잇고(톱니 끝·골은 원호), 가운데에 구멍.
