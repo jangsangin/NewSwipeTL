@@ -15,7 +15,7 @@ public class ToolbarButtonsTest {
     @Test
     public void roundTripsBothSides() {
         String[] left = {"settings", "clipboard"};
-        String[] right = {"hide", "emoji", "voice", "undo", "onehand"};
+        String[] right = {"hide", "emoji", "voice", "undo", "onehand", "translate"};
         String[][] o = ToolbarButtons.order(ToolbarButtons.join(left, right));
         assertArrayEquals(left, o[0]);
         assertArrayEquals(right, o[1]);
