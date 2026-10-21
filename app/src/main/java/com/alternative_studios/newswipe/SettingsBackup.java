@@ -38,7 +38,8 @@ public final class SettingsBackup {
 
     private static boolean excluded(String key) {
         return Prefs.RECENT_EMOJI.equals(key) || Prefs.PINNED_EMOJI.equals(key) || Prefs.LANGUAGE.equals(key)
-                || Prefs.ONE_HAND.equals(key) || Prefs.ONBOARDING_DONE.equals(key);
+                || Prefs.ONE_HAND.equals(key) || Prefs.ONBOARDING_DONE.equals(key)
+                || Prefs.TRANSLATE_API_KEY.equals(key);   // API 키는 백업 파일에 담지 않는다
     }
 
     private static ComponentName launcherAlias(Context context) {

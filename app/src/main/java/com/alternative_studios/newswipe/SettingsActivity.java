@@ -2035,7 +2035,7 @@ public final class SettingsActivity extends Activity {
         }
 
         LinearLayout about = section("개인 정보");
-        about.addView(note("모든 처리는 기기 안에서만 하며 인터넷을 쓰지 않습니다. 비밀번호·이메일 입력란에서는 학습을 하지 않습니다."));
+        about.addView(note("단어 추천과 학습은 기기 안에서만 처리하며 인터넷을 쓰지 않습니다 (번역 버튼은 따로 쓸 때만 인터넷을 씁니다). 비밀번호·이메일 입력란에서는 학습을 하지 않습니다."));
 
         buildDictionaryPack();
     }
@@ -2360,6 +2360,22 @@ public final class SettingsActivity extends Activity {
         tools.addView(slider("도구 버튼 크기", Prefs.TOOL_BUTTON_SIZE, prefs.toolButtonSize(), 70, 150, 5, "%"));
         tools.addView(note("도구 버튼의 아이콘은 막대보다 커지지 않습니다."));
 
+        LinearLayout translate = section("번역");
+        translate.addView(note("Google Cloud Translation API로 입력란의 글을 번역합니다. 도구 막대 버튼 사용자화에서 '번역 버튼'을 켜면 "
+                + "도구 막대에 나타납니다. 번역 버튼을 누른 순간의 글만 Google로 전송되며, 그 밖의 입력은 전송하지 않습니다."));
+        String savedKey = prefs.translateApiKey();
+        String keyState = savedKey == null || savedKey.isEmpty() ? "입력 안 됨"
+                : "입력됨 (…" + savedKey.substring(Math.max(0, savedKey.length() - 4)) + ")";
+        translate.addView(button("API 키 · " + keyState, v -> askTranslateKey()));
+        translate.addView(button("번역할 언어 · " + Translator.languageName(prefs.translateTarget()),
+                v -> askTranslateLanguage("번역할 언어", Prefs.TRANSLATE_TARGET, prefs.translateTarget())));
+        translate.addView(button("이미 그 언어일 때 번역할 언어 · " + Translator.languageName(prefs.translateAlt()),
+                v -> askTranslateLanguage("이미 그 언어일 때 번역할 언어", Prefs.TRANSLATE_ALT, prefs.translateAlt())));
+        translate.addView(note("글이 '번역할 언어'로 쓰여 있으면(자동 감지) 두 번째 언어로 번역합니다. 이때는 같은 글을 두 번 보내 "
+                + "글자 수가 두 배로 셉니다. Google Cloud Translation은 월 50만 자까지 무료이며 결제 계정 등록이 필요합니다. "
+                + "한 번에 " + Translator.MAX_CHARS + "자까지 번역하며, Cloud 콘솔에서 일일 할당량을 걸어 두면 안전합니다. "
+                + "API 키는 이 기기의 앱 저장소에만 저장되고 설정 내보내기에는 담기지 않습니다."));
+
         LinearLayout clip = section("클립보드");
         View clipImagesToggle = toggle("이미지 저장", "복사한 이미지도 클립보드에 저장합니다 (최대 "
                         + ClipboardHistory.MAX_IMAGES + "개).",
@@ -2392,6 +2408,47 @@ public final class SettingsActivity extends Activity {
         LinearLayout emoji = section("이모지");
         emoji.addView(emojiSizeRow());
         emoji.addView(toggle("이모지 추천", "이모지 창을 열면 커서 앞에 쓴 글(마지막 네 단어)에 맞는 이모지를 보여 줍니다.", Prefs.EMOJI_SUGGEST, prefs.emojiSuggest()));
+    }
+
+    private void askTranslateKey() {
+        EditText input = new EditText(this);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        input.setHint("AIza...");
+        int pad = Ui.dp(this, 20);
+        LinearLayout box = new LinearLayout(this);
+        box.setPadding(pad, Ui.dp(this, 8), pad, 0);
+        box.addView(input, matchWrap());
+        AppTheme.dialogBuilder(this)
+                .setTitle("Google Cloud Translation API 키")
+                .setMessage("Cloud 콘솔에서 만든 API 키를 붙여 넣으세요. 키는 'Cloud Translation API만 허용'으로 제한해 두세요. "
+                        + "비워 두고 저장하면 키를 지웁니다.")
+                .setView(box)
+                .setPositiveButton("저장", (d, w) -> {
+                    prefs.raw().edit().putString(Prefs.TRANSLATE_API_KEY, input.getText().toString().trim()).apply();
+                    d.dismiss();
+                    recreate();
+                })
+                .setNegativeButton("취소", null)
+                .show();
+    }
+
+    private void askTranslateLanguage(String title, String key, String current) {
+        String[] names = new String[Translator.LANGUAGES.length];
+        int checked = -1;
+        for (int i = 0; i < names.length; i++) {
+            names[i] = Translator.LANGUAGES[i][1];
+            if (Translator.LANGUAGES[i][0].equalsIgnoreCase(current)) checked = i;
+        }
+        AppTheme.dialogBuilder(this)
+                .setTitle(title)
+                .setSingleChoiceItems(names, checked, (d, which) -> {
+                    prefs.raw().edit().putString(key, Translator.LANGUAGES[which][0]).apply();
+                    d.dismiss();
+                    recreate();
+                })
+                .setNegativeButton("취소", null)
+                .show();
     }
 
     /**

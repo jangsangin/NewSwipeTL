@@ -112,7 +112,7 @@ public final class NewSwipeIME extends InputMethodService implements KeyboardVie
     private FrameLayout topSlot;
     private SwipeStrip toolbar;
     private IconButton clipboardButton, emojiButton, settingsButton, hideButton;
-    private IconButton voiceButton, undoButton, oneHandButton;
+    private IconButton voiceButton, undoButton, oneHandButton, translateButton;
     /**
      * 한 손 모드 배치: body(가로) = [column(도구 막대·검색 결과·자판) | sideStrip(반대편 빈 곳)], 그 아래 liftSpace.
      * 한 손 모드가 꺼져 있으면 column만 꽉 차게 들어가고 sideStrip은 숨긴다. liftSpace는 가로 모드·대화면의
@@ -743,6 +743,8 @@ public final class NewSwipeIME extends InputMethodService implements KeyboardVie
         bar.addView(voiceButton);
         undoButton = toolButton(Icons.UNDO, "실행 취소", v -> undo());
         bar.addView(undoButton);
+        translateButton = toolButton(Icons.TRANSLATE, "번역", v -> translateField());
+        bar.addView(translateButton);
         toolSpacer = new View(this);
         bar.addView(toolSpacer, new LinearLayout.LayoutParams(0, 1, 1f));
         // 방금 복사한 내용 칩은 빈 공간 자리에 뜬다 (도구 버튼은 그대로 둔다).
@@ -789,6 +791,7 @@ public final class NewSwipeIME extends InputMethodService implements KeyboardVie
             case ToolbarButtons.EMOJI: return emojiButton;
             case ToolbarButtons.VOICE: return voiceButton;
             case ToolbarButtons.UNDO: return undoButton;
+            case ToolbarButtons.TRANSLATE: return translateButton;
             case ToolbarButtons.SETTINGS: return settingsButton;
             case ToolbarButtons.ONE_HAND: return oneHandButton;
             default: return hideButton;
@@ -3700,6 +3703,113 @@ public final class NewSwipeIME extends InputMethodService implements KeyboardVie
             if (len < want || want >= 100_000) return len;   // 글의 처음·끝까지 왔다
             want *= 4;
         }
+    }
+
+    // ---------------------------------------------------------------- 번역 (Google Cloud Translation)
+
+    private int translateSeq;   // 번역 요청 번호. 새 요청이나 입력란 변경 시 늦게 온 응답을 버린다
+
+    /**
+     * 번역 버튼: 선택한 글이 있으면 그 글을, 없으면 입력란 전체를 목표 언어로 번역해 그 자리에 바꿔 넣는다.
+     * 글이 이미 목표 언어이면(자동 감지) 보조 언어로 다시 번역한다 (기본: 영어 ↔ 한국어).
+     * 누른 순간의 글만 전송하며, 결과가 올 때까지 입력란이 그대로일 때만 바꾼다. 실행 취소 버튼으로 되돌릴 수 있다.
+     */
+    private void translateField() {
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null) return;
+        if (passwordField) {
+            Toast.makeText(this, "비밀번호 입력란에서는 번역할 수 없습니다", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String key = prefs.translateApiKey();
+        if (key == null || key.trim().isEmpty()) {
+            askOnBar("번역하려면 API 키가 필요합니다. 설정을 열까요?", this::openSettings);
+            return;
+        }
+        commitComposing();
+        CharSequence selected = ic.getSelectedText(0);
+        String before = "", after = "", original;
+        boolean selection = selected != null && selected.length() > 0;
+        if (selection) {
+            original = selected.toString();
+        } else {
+            CharSequence b = ic.getTextBeforeCursor(Translator.MAX_CHARS + 1, 0);
+            CharSequence a = ic.getTextAfterCursor(Translator.MAX_CHARS + 1, 0);
+            before = b == null ? "" : b.toString();
+            after = a == null ? "" : a.toString();
+            original = before + after;
+        }
+        if (original.trim().isEmpty()) {
+            Toast.makeText(this, "번역할 글이 없습니다", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (original.length() > Translator.MAX_CHARS) {
+            Toast.makeText(this, "글이 너무 깁니다 (" + Translator.MAX_CHARS + "자까지). 일부를 선택해 번역해 보세요",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        final String target = prefs.translateTarget(), alt = prefs.translateAlt();
+        final int seq = ++translateSeq;
+        final String sentText = original;
+        final int beforeLen = before.length(), afterLen = after.length();
+        Toast.makeText(this, "번역 중…", Toast.LENGTH_SHORT).show();
+        Thread t = new Thread(() -> {
+            String error = null;
+            Translator.Result result = null;
+            try {
+                result = Translator.translate(key, sentText, null, target);
+                // 이미 목표 언어로 쓴 글이면 보조 언어로 다시 번역한다.
+                if (result.detected != null && sameLanguage(result.detected, target) && !sameLanguage(target, alt)) {
+                    result = Translator.translate(key, sentText, result.detected, alt);
+                }
+            } catch (Translator.TranslateException e) {
+                error = e.getMessage();
+            }
+            final Translator.Result r = result;
+            final String err = error;
+            main.post(() -> applyTranslation(seq, sentText, selection, beforeLen, afterLen, r, err));
+        }, "translate");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private static boolean sameLanguage(String a, String b) {
+        String x = a.toLowerCase(java.util.Locale.ROOT), y = b.toLowerCase(java.util.Locale.ROOT);
+        if (x.equals(y)) return true;
+        int i = x.indexOf('-'), j = y.indexOf('-');
+        return (i < 0 ? x : x.substring(0, i)).equals(j < 0 ? y : y.substring(0, j))
+                && (i < 0 || j < 0);   // zh-CN과 zh-TW처럼 둘 다 지역이 붙어 서로 다르면 다른 언어로 본다
+    }
+
+    /** 번역 결과를 입력란에 넣는다. 그사이 입력란의 글이 바뀌었으면 넣지 않는다. */
+    private void applyTranslation(int seq, String sent, boolean selection, int beforeLen, int afterLen,
+            Translator.Result result, String error) {
+        if (seq != translateSeq) return;
+        if (error != null) {
+            Toast.makeText(this, error, Toast.LENGTH_LONG).show();
+            return;
+        }
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null || result == null || result.text.isEmpty()) return;
+        commitComposing();
+        String now;
+        if (selection) {
+            CharSequence sel = ic.getSelectedText(0);
+            now = sel == null ? "" : sel.toString();
+        } else {
+            CharSequence b = ic.getTextBeforeCursor(Translator.MAX_CHARS + 1, 0);
+            CharSequence a = ic.getTextAfterCursor(Translator.MAX_CHARS + 1, 0);
+            now = (b == null ? "" : b.toString()) + (a == null ? "" : a.toString());
+        }
+        if (!now.equals(sent)) {
+            Toast.makeText(this, "번역하는 동안 글이 바뀌어 적용하지 않았습니다", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        ic.beginBatchEdit();
+        if (!selection) ic.deleteSurroundingText(beforeLen, afterLen);
+        ic.commitText(result.text, 1);
+        ic.endBatchEdit();
+        endEdit();
     }
 
     private void startVoiceInput() {
